@@ -1,10 +1,10 @@
 import motor.motor_asyncio
 
-from app.config import MONGODB_URL
+from app.config import settings
 
-client = motor.motor_asyncio.AsyncIOMotorClient(MONGODB_URL)
+client = motor.motor_asyncio.AsyncIOMotorClient(settings.MONGODB_URL)
 
-database = client["book-catalog"]
+database = client[settings.DATABASE_NAME]
 
 Books = database["books"]
 

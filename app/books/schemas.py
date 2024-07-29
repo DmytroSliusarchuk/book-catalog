@@ -1,6 +1,7 @@
 from typing import Annotated
 
-from pydantic import BaseModel, Field, BeforeValidator, PositiveInt, PastDatetime
+from pydantic import BaseModel, Field, BeforeValidator, PositiveInt, PastDatetime, NonNegativeFloat, \
+    NonNegativeInt
 
 PyObjectId = Annotated[str, BeforeValidator(str)]
 
@@ -29,11 +30,24 @@ class BookBaseSchema(BaseModel):
         populate_by_name = True
         arbitrary_types_allowed = True
 
+class BookBaseResponseSchema(BookBaseSchema):
+    number_of_reviews: NonNegativeInt = Field(
+        title="Number of book reviews"
+    )
+    average_rating: NonNegativeFloat = Field(
+        title="Book average rating"
+    )
+
 
 class BookDetailSchema(BookBaseSchema):
+    authors: list[AuthorDetailSchema] = Field(title="List of book authors with details")
     edition: PositiveInt | None = Field(title="Book edition", default=None)
     isbn: str = Field(title="Book ISBN")
     pages: PositiveInt = Field(title="Book pages")
     cover_image: str | None = Field(title="Book cover image", default=None)
     publisher: str = Field(title="Book publisher")
     summary: str | None = Field(title="Book summary", default=None)
+
+
+class BookDetailResponseSchema(BookDetailSchema, BookBaseResponseSchema):
+    pass

@@ -5,16 +5,18 @@ from fastapi import FastAPI, status
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.books.router import router as books_router
-from app.config import app_config
+from app.reviews.router import router as reviews_router
+from app.config import app_configs, settings
 
-app = FastAPI(**app_config)
+app = FastAPI(**app_configs)
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=settings.CORS_ORIGINS,
+    allow_origin_regex=settings.CORS_ORIGINS_REGEX,
     allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_methods=("GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"),
+    allow_headers=settings.CORS_HEADERS,
 )
 
 
@@ -46,3 +48,4 @@ async def root() -> dict[str, str]:
 
 
 app.include_router(books_router)
+app.include_router(reviews_router)

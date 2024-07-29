@@ -2,10 +2,11 @@ from typing import Annotated
 
 from bson import ObjectId
 from fastapi import APIRouter, status, HTTPException, Query, Path
+from pymongo import ASCENDING
 
 from app.database import Books
-from app.books.schemas import BookBaseSchema, BookDetailSchema
-from app.config import DEFAULT_PAGE_SIZE
+from app.books.schemas import BookBaseSchema, BookDetailSchema, BookBaseResponseSchema, BookDetailResponseSchema
+from app.config import settings
 
 router = APIRouter(prefix="/books", tags=["books"])
 
@@ -16,37 +17,49 @@ router = APIRouter(prefix="/books", tags=["books"])
     summary="Get all books from the database",
     response_description="List of books",
     status_code=status.HTTP_200_OK,
-    response_model=list[BookBaseSchema],
+    response_model=list[BookBaseResponseSchema],
 )
 async def get_all_books(
     page: Annotated[int, Query(ge=1, title="Page number")] = 1,
     limit: Annotated[
         int,
         Query(ge=1, le=500, title="Page size"),
-    ] = DEFAULT_PAGE_SIZE,
-) -> list[BookBaseSchema]:
+    ] = settings.DEFAULT_PAGE_SIZE,
+) -> list[BookBaseResponseSchema]:
     """
     Get all books from the database
+    :param page: Page number
+    :param limit: Page size
     :return: List of books
     """
     try:
-        books = (
-            await Books.find(
-                {},
-                {
+        aggregation_pipeline = [
+            {"$sort": {"_id": ASCENDING}},
+            {"$skip": (page - 1) * limit},
+            {"$limit": limit},
+            {
+                "$lookup": {
+                    "from": "reviews",
+                    "localField": "_id",
+                    "foreignField": "book_id",
+                    "as": "reviews"
+                }
+            },
+            {
+                "$project": {
                     "title": 1,
                     "authors.first_name": 1,
                     "authors.last_name": 1,
                     "published_date": 1,
                     "language": 1,
                     "genres": 1,
-                },
-            )
-            .sort("_id")
-            .skip((page - 1) * limit)
-            .limit(limit)
-            .to_list(length=None)
-        )
+                    "number_of_reviews": {"$size": "$reviews"},
+                    "average_rating": {"$ifNull": [{"$round": [{"$avg": "$reviews.rating"}, 2]}, 0]}
+                }
+            },
+        ]
+
+        books = await Books.aggregate(aggregation_pipeline).to_list(length=None)
     except Exception as exc:
         raise HTTPException(status_code=400, detail=str(exc))
 
@@ -59,11 +72,11 @@ async def get_all_books(
     summary="Get a book from the database by id",
     response_description="Book data",
     status_code=status.HTTP_200_OK,
-    response_model=BookDetailSchema,
+    response_model=BookDetailResponseSchema,
 )
 async def get_book_by_id(
     book_id: Annotated[str, Path(title="Book id")],
-) -> BookDetailSchema:
+) -> BookDetailResponseSchema:
     """
     Get a book from the database by id
     :param book_id: Book id
@@ -71,15 +84,29 @@ async def get_book_by_id(
     """
     try:
         book_id = ObjectId(book_id)
+        aggregation_pipeline = [
+            {"$match": {"_id": book_id}},
+            {"$lookup": {
+                "from": "reviews",
+                "localField": "_id",
+                "foreignField": "book_id",
+                "as": "reviews"
+            }},
+            {"$set": {
+                "number_of_reviews": {"$size": "$reviews"},
+                "average_rating": {"$ifNull": [{"$round": [{"$avg": "$reviews.rating"}, 2]}, 0]}
+            }},
+            {"$unset": "reviews"},
+        ]
 
-        book = await Books.find_one({"_id": book_id})
+        book = await Books.aggregate(aggregation_pipeline).to_list(length=None)
     except Exception as exc:
         raise HTTPException(status_code=400, detail=str(exc))
 
-    if book is None:
+    if not book:
         raise HTTPException(status_code=404, detail="Book not found")
 
-    return book
+    return book[0]
 
 
 @router.delete(
@@ -114,6 +141,7 @@ async def create_book(book: BookDetailSchema) -> dict[str, str]:
     """
     Create a new book in the database
     :param book: Book data
+    :return: Book id
     """
     try:
         book_dict = book.dict(by_alias=True, exclude_unset=True)
@@ -151,6 +179,9 @@ async def update_book_by_id(
         book_id = ObjectId(book_id)
         book_dict = book.dict(by_alias=True, exclude_unset=True)
 
+        if "_id" in book_dict:
+            del book_dict["_id"]
+
         result = await Books.update_one({"_id": book_id}, {"$set": book_dict})
 
     except Exception as exc:
@@ -175,6 +206,7 @@ async def search_books(
     """
     Search books in the database
     :param title: Book title
+    :return: List of books
     """
     try:
         books = await Books.find(
