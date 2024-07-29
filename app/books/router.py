@@ -191,9 +191,8 @@ async def update_book_by_id(
         raise HTTPException(status_code=404, detail="Book not found")
 
 
-# Will be properly implemented soon
 @router.get(
-    "/search",
+    "/search/",
     description="Search books",
     summary="Search books in the database",
     response_description="List of books",
@@ -201,25 +200,39 @@ async def update_book_by_id(
     response_model=list[BookBaseSchema],
 )
 async def search_books(
-    title: Annotated[str, Query(title="Book title")],
+    query: Annotated[str, Query(title="Search query")],
 ) -> list[BookBaseSchema]:
     """
-    Search books in the database
-    :param title: Book title
+    Search books in the database using Atlas Search
+    :param query: Search query string
     :return: List of books
     """
     try:
-        books = await Books.find(
+        pipeline = [
             {
-                "title": 1,
-                "authors.first_name": 1,
-                "authors.last_name": 1,
-                "published_date": 1,
-                "language": 1,
-                "genres": 1,
+                "$search": {
+                    "index": "book-search",
+                    "wildcard": {
+                        "query": f"{query}",
+                        "path": {
+                            "wildcard": "*"
+                        },
+                        "allowAnalyzedField": True
+                    }
+                }
             },
-        ).to_list(length=None)
+            {
+                "$project": {
+                    "title": 1,
+                    "authors.first_name": 1,
+                    "authors.last_name": 1,
+                    "published_date": 1,
+                    "language": 1,
+                    "genres": 1,
+                }
+            }
+        ]
+        books = await Books.aggregate(pipeline).to_list(length=None)
     except Exception as exc:
         raise HTTPException(status_code=400, detail=str(exc))
-
     return books
