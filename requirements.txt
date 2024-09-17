@@ -1,0 +1,7 @@
+Faker==25.5.0
+fastapi==0.111.0
+motor==3.4.0
+pydantic==2.7.4
+pymongo==4.7.2
+python-dotenv==1.0.1
+starlette==0.37.2
